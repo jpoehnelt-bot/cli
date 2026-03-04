@@ -22,7 +22,8 @@ pub fn build_cli(doc: &RestDescription) -> Command {
         .description
         .clone()
         .unwrap_or_else(|| "Google Workspace CLI".to_string());
-    let mut root = Command::new("gws")
+    let mut root = Command::new(format!("gws {}", doc.name))
+        .bin_name(format!("gws {}", doc.name))
         .about(about_text)
         .subcommand_required(true)
         .arg_required_else_help(true)
