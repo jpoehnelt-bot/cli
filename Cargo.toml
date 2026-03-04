@@ -52,11 +52,21 @@ derive_builder = "0.20.2"
 ratatui = "0.30.0"
 crossterm = "0.29.0"
 chrono = "0.4.44"
-keyring = "3.6.3"
+keyring = { version = "3.6.3", default-features = false }
 async-trait = "0.1.89"
 serde_yaml = "0.9.34"
 percent-encoding = "2.3.2"
 
+
+# Platform-specific keyring backends for persistent credential storage
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["linux-native-sync-persistent", "crypto-rust"] }
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
