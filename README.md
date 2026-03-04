@@ -103,8 +103,8 @@ gws auth login       # subsequent logins
 Use this when `gws setup` cannot automate project/client creation, or when you want explicit control.
 
 1. Open Google Cloud Console in the target project:
-   - OAuth consent screen: `https://console.cloud.google.com/apis/credentials/consent?project=<PROJECT_ID>`
-   - Credentials: `https://console.cloud.google.com/apis/credentials?project=<PROJECT_ID>`
+   - OAuth overview: `https://console.cloud.google.com/auth/overview?project=<PROJECT_ID>`
+   - Clients: `https://console.cloud.google.com/auth/clients?project=<PROJECT_ID>`
 2. Configure OAuth branding/audience if prompted:
    - App type: **External** (testing mode is fine)
    - Add your account under **Test users**
@@ -262,42 +262,6 @@ gws gmail users messages get --params '...' \
 5. Authenticate, build the HTTP request, execute
 
 All output — success, errors, download metadata — is structured JSON.
-
-
-## Troubleshooting
-
-### API not enabled — `accessNotConfigured`
-
-If a required Google API is not enabled for your GCP project, you will see a
-403 error with reason `accessNotConfigured`:
-
-```json
-{
-  "error": {
-    "code": 403,
-    "message": "Gmail API has not been used in project 549352339482 ...",
-    "reason": "accessNotConfigured",
-    "enable_url": "https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=549352339482"
-  }
-}
-```
-
-`gws` also prints an actionable hint to **stderr**:
-
-```
-💡 API not enabled for your GCP project.
-   Enable it at: https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=549352339482
-   After enabling, wait a few seconds and retry your command.
-```
-
-**Steps to fix:**
-1. Click the `enable_url` link (or copy it from the `enable_url` JSON field).
-2. In the GCP Console, click **Enable**.
-3. Wait ~10 seconds, then retry your `gws` command.
-
-> [!TIP]
-> You can also run `gws setup` which walks you through enabling all required
-> APIs for your project automatically.
 
 
 ## Development
