@@ -394,8 +394,7 @@ async fn handle_agenda(matches: &ArgMatches) -> Result<(), GwsError> {
 }
 
 fn epoch_to_rfc3339(epoch: u64) -> String {
-    use chrono::{TimeZone, Utc};
-    Utc.timestamp_opt(epoch as i64, 0).unwrap().to_rfc3339()
+    super::utils::epoch_to_rfc3339(epoch)
 }
 
 fn build_insert_request(

@@ -25,6 +25,7 @@ pub mod gmail;
 pub mod modelarmor;
 pub mod script;
 pub mod sheets;
+pub(crate) mod utils;
 pub mod workflows;
 
 /// A trait for service-specific CLI helpers that inject custom commands.

@@ -83,6 +83,13 @@ fn build_standup_report_cmd() -> Command {
     Command::new("+standup-report")
         .about("[Helper] Today's meetings + open tasks as a standup summary")
         .arg(
+            Arg::new("calendar")
+                .long("calendar")
+                .help("Calendar ID (default: primary)")
+                .default_value("primary")
+                .value_name("ID"),
+        )
+        .arg(
             Arg::new("format")
                 .long("format")
                 .help("Output format: json (default), table, yaml, csv")
@@ -93,6 +100,7 @@ fn build_standup_report_cmd() -> Command {
             "\
 EXAMPLES:
   gws workflow +standup-report
+  gws workflow +standup-report --calendar Work
   gws workflow +standup-report --format table
 
 TIPS:
@@ -274,6 +282,11 @@ async fn handle_standup_report(matches: &ArgMatches) -> Result<(), GwsError> {
 
     let client = crate::client::build_client()?;
 
+    let calendar_id = matches
+        .get_one::<String>("calendar")
+        .map(|s| s.as_str())
+        .unwrap_or("primary");
+
     // Today's time range
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -285,9 +298,13 @@ async fn handle_standup_report(matches: &ArgMatches) -> Result<(), GwsError> {
     let time_max = epoch_to_rfc3339(day_end);
 
     // Fetch today's events
+    let events_url = format!(
+        "https://www.googleapis.com/calendar/v3/calendars/{}/events",
+        crate::validate::encode_path_segment(calendar_id)
+    );
     let events_json = get_json(
         &client,
-        "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        &events_url,
         &token,
         &[
             ("timeMin", time_min.as_str()),
@@ -690,8 +707,7 @@ async fn handle_file_announce(matches: &ArgMatches) -> Result<(), GwsError> {
 // ---------------------------------------------------------------------------
 
 fn epoch_to_rfc3339(epoch: u64) -> String {
-    use chrono::{TimeZone, Utc};
-    Utc.timestamp_opt(epoch as i64, 0).unwrap().to_rfc3339()
+    super::utils::epoch_to_rfc3339(epoch)
 }
 
 #[cfg(test)]
@@ -730,6 +746,16 @@ mod tests {
     fn test_build_standup_report_cmd() {
         let cmd = build_standup_report_cmd();
         assert_eq!(cmd.get_name(), "+standup-report");
+        // +standup-report should have --calendar option for consistency with +meeting-prep
+        let arg = cmd.get_arguments().find(|a| a.get_id() == "calendar");
+        assert!(
+            arg.is_some(),
+            "+standup-report should have --calendar argument"
+        );
+        assert_eq!(
+            arg.unwrap().get_default_values(),
+            &[std::ffi::OsStr::new("primary")]
+        );
     }
 
     #[test]
