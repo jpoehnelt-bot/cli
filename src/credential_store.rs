@@ -30,65 +30,80 @@ fn get_or_create_key() -> anyhow::Result<[u8; 32]> {
         return Ok(*key);
     }
 
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+
+    // cache_key stores the candidate in the OnceLock and returns whatever value
+    // the lock actually holds.  When two threads race to initialize the lock,
+    // the loser's candidate is discarded and both threads end up with the
+    // winner's key — keeping encrypt/decrypt consistent within a process.
+    let cache_key = |candidate: [u8; 32]| -> [u8; 32] {
+        if KEY.set(candidate).is_ok() {
+            candidate
+        } else {
+            *KEY.get()
+                .expect("OnceLock must be initialized if set() failed")
+        }
+    };
+
     let username = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| "unknown-user".to_string());
 
-    let entry = Entry::new("gws-cli", &username);
-
-    if let Ok(entry) = entry {
-        match entry.get_password() {
-            Ok(b64_key) => {
-                use base64::{engine::general_purpose::STANDARD, Engine as _};
-                if let Ok(decoded) = STANDARD.decode(&b64_key) {
-                    if decoded.len() == 32 {
-                        let mut arr = [0u8; 32];
-                        arr.copy_from_slice(&decoded);
-                        let _ = KEY.set(arr);
-                        return Ok(arr);
-                    }
-                }
-            }
-            Err(keyring::Error::NoEntry) => {
-                // Generate a random 32-byte key
-                let mut key = [0u8; 32];
-                rand::thread_rng().fill_bytes(&mut key);
-
-                use base64::{engine::general_purpose::STANDARD, Engine as _};
-                let b64_key = STANDARD.encode(key);
-
-                if entry.set_password(&b64_key).is_ok() {
-                    let _ = KEY.set(key);
-                    return Ok(key);
-                }
-            }
-            Err(_) => {} // Fallthrough to file storage
-        }
-    }
-
-    // Fallback: Local file `.encryption_key`
+    // The local file is the canonical persistent store. The OS keyring is used
+    // as a secondary store when available, but we do not rely on it for
+    // cross-process stability because some keyring backends (e.g. the in-memory
+    // mock used when no platform feature is enabled) do not survive process
+    // restarts, and native backends may require interactive prompts before
+    // returning.
     let key_file = crate::auth_commands::config_dir().join(".encryption_key");
+
+    // --- 1. Try file first (primary, always available) ---
     if key_file.exists() {
         if let Ok(b64_key) = std::fs::read_to_string(&key_file) {
-            use base64::{engine::general_purpose::STANDARD, Engine as _};
             if let Ok(decoded) = STANDARD.decode(b64_key.trim()) {
                 if decoded.len() == 32 {
                     let mut arr = [0u8; 32];
                     arr.copy_from_slice(&decoded);
-                    let _ = KEY.set(arr);
-                    return Ok(arr);
+                    return Ok(cache_key(arr));
                 }
             }
         }
     }
 
-    // Generate new key and save to local file
+    // --- 2. File not found: try the OS keyring as a fallback source ---
+    let entry = Entry::new("gws-cli", &username);
+    if let Ok(ref entry) = entry {
+        if let Ok(b64_key) = entry.get_password() {
+            if let Ok(decoded) = STANDARD.decode(b64_key.trim()) {
+                if decoded.len() == 32 {
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&decoded);
+                    // Persist to file so future runs do not need the keyring.
+                    write_key_file(&key_file, &b64_key);
+                    return Ok(cache_key(arr));
+                }
+            }
+        }
+    }
+
+    // --- 3. Neither source has a key: generate a new one ---
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
-
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
     let b64_key = STANDARD.encode(key);
 
+    // Always write to file first (the reliable persistent store).
+    write_key_file(&key_file, &b64_key);
+
+    // Best-effort: also store in the OS keyring for native backends.
+    if let Ok(ref entry) = entry {
+        let _ = entry.set_password(&b64_key);
+    }
+
+    Ok(cache_key(key))
+}
+
+/// Writes the base-64 key to the local key file with restrictive permissions.
+fn write_key_file(key_file: &std::path::Path, b64_key: &str) {
     if let Some(parent) = key_file.parent() {
         let _ = std::fs::create_dir_all(parent);
         #[cfg(unix)]
@@ -97,24 +112,20 @@ fn get_or_create_key() -> anyhow::Result<[u8; 32]> {
             let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
         }
     }
-
     #[cfg(unix)]
     {
+        use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true).mode(0o600);
-        if let Ok(mut file) = options.open(&key_file) {
-            use std::io::Write;
+        if let Ok(mut file) = options.open(key_file) {
             let _ = file.write_all(b64_key.as_bytes());
         }
     }
     #[cfg(not(unix))]
     {
-        let _ = std::fs::write(&key_file, b64_key);
+        let _ = std::fs::write(key_file, b64_key);
     }
-
-    let _ = KEY.set(key);
-    Ok(key)
 }
 
 /// Encrypts plaintext bytes using AES-256-GCM with a machine-derived key.
