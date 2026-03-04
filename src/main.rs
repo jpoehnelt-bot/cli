@@ -125,7 +125,7 @@ async fn run() -> Result<(), GwsError> {
     // Re-parse args (skip argv[0] which is the binary, and argv[1] which is the service name)
     // Filter out --api-version and its value
     // Prepend "gws" as the program name since try_get_matches_from expects argv[0]
-    let sub_args = filter_args_for_subcommand(&args);
+    let sub_args = filter_args_for_subcommand(&args, &api_name);
 
     let matches = cli.try_get_matches_from(&sub_args).map_err(|e| {
         // If it's a help or version display, print it and exit cleanly
@@ -247,8 +247,8 @@ pub fn parse_service_and_version(
     Ok((api_name, version))
 }
 
-pub fn filter_args_for_subcommand(args: &[String]) -> Vec<String> {
-    let mut sub_args: Vec<String> = vec!["gws".to_string()];
+pub fn filter_args_for_subcommand(args: &[String], service_name: &str) -> Vec<String> {
+    let mut sub_args: Vec<String> = vec![format!("gws {service_name}")];
     let mut skip_next = false;
     for arg in args.iter().skip(2) {
         if skip_next {
@@ -401,7 +401,7 @@ mod tests {
             .get_matches_from(vec!["test"]);
 
         let config = parse_pagination_config(&matches);
-        assert_eq!(config.page_all, false);
+        assert!(!config.page_all);
         assert_eq!(config.page_limit, 10);
         assert_eq!(config.page_delay_ms, 100);
     }
@@ -434,7 +434,7 @@ mod tests {
             ]);
 
         let config = parse_pagination_config(&matches);
-        assert_eq!(config.page_all, true);
+        assert!(config.page_all);
         assert_eq!(config.page_limit, 20);
         assert_eq!(config.page_delay_ms, 500);
     }
